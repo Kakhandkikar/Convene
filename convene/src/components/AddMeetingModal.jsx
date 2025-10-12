@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { convert12To24Hour, convert24To12Hour, getCurrentTime12Hour, formatDateTime } from "../utils/timeUtils";
 
-export default function AddMeetingModal({ onClose, onCreate }) {
+export default function AddMeetingModal({ onClose, onCreate, meetingType = "automated" }) {
   const [context, setContext] = useState("organizational");
   const [title, setTitle] = useState("");
   const [type, setType] = useState("online");
@@ -17,6 +18,11 @@ export default function AddMeetingModal({ onClose, onCreate }) {
   const [allowWeekends, setAllowWeekends] = useState(false); // ✅ fixed
   const [allowHolidays, setAllowHolidays] = useState(false); // ✅ fixed
   const [result, setResult] = useState(null);
+  
+  // Manual scheduling fields
+  const [manualDate, setManualDate] = useState("");
+  const [manualTime, setManualTime] = useState(getCurrentTime12Hour());
+  const [isManualMode] = useState(meetingType === "manual");
 
   const generateMeetingId = () => {
     const timestamp = Date.now().toString(36);
@@ -27,51 +33,103 @@ export default function AddMeetingModal({ onClose, onCreate }) {
   const handleGenerate = async () => {
     setStep("loading");
 
-    const payload = {
-      title: title || `${platform} Meeting`,
-      platform,
-      hostEmail: hostEmail || undefined,
-      context,
-      organizerTimezone: orgTz,
-      clientTimezone: context === "international" ? clientTz : null,
-      month,
-      weekNumber: parseInt(week, 10),
-      allowWeekends,
-      allowHolidays,
-      participants
-    };
+    if (isManualMode) {
+      // Manual mode - create meeting with user-selected date/time
+      const time24Hour = convert12To24Hour(manualTime);
+      const meetingDateTime = new Date(`${manualDate}T${time24Hour}`);
+      const formattedDateTime = meetingDateTime.toISOString();
+      
+      const payload = {
+        title: title || `${platform} Meeting`,
+        platform,
+        hostEmail: hostEmail || undefined,
+        context,
+        organizerTimezone: orgTz,
+        clientTimezone: context === "international" ? clientTz : null,
+        organizerTime: formattedDateTime,
+        clientTime: context === "international" ? formattedDateTime : null,
+        participants
+      };
 
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/gemini`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/manual`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const data = await response.json();
+
+        setResult(data);
+        setStep("result");
+
+        if (onCreate) {
+          const newMeeting = {
+            id: Date.now().toString(),
+            meetingId: data.meetingId || generateMeetingId(),
+            title: title || `${platform} Meeting`,
+            time: data.organizerTime,
+            clientTime: data.clientTime || null,
+            platform,
+            participants: participants.length > 0 ? participants : ["organizer@company.com"],
+          };
+          onCreate(newMeeting);
         }
-      );
-
-      const data = await response.json(); // Gemini returns JSON only
-
-      setResult(data);
-      setStep("result");
-
-      if (onCreate) {
-        const newMeeting = {
-          id: Date.now().toString(),
-          meetingId: data.meetingId || generateMeetingId(),
-          title: title || `${platform} Meeting`,
-          time: data.organizerTime,
-          clientTime: data.clientTime || null,
-          platform,
-          participants:
-            participants.length > 0 ? participants : ["organizer@company.com"],
-        };
-        onCreate(newMeeting);
+      } catch (err) {
+        console.error("Error creating manual meeting:", err);
+        setStep("form");
       }
-    } catch (err) {
-      console.error("Error generating meeting:", err);
-      setStep("form");
+    } else {
+      // Automated mode - use AI to find best time
+      const payload = {
+        title: title || `${platform} Meeting`,
+        platform,
+        hostEmail: hostEmail || undefined,
+        context,
+        organizerTimezone: orgTz,
+        clientTimezone: context === "international" ? clientTz : null,
+        month,
+        weekNumber: parseInt(week, 10),
+        allowWeekends,
+        allowHolidays,
+        participants
+      };
+
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/gemini`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const data = await response.json(); // Gemini returns JSON only
+
+        setResult(data);
+        setStep("result");
+
+        if (onCreate) {
+          const newMeeting = {
+            id: Date.now().toString(),
+            meetingId: data.meetingId || generateMeetingId(),
+            title: title || `${platform} Meeting`,
+            time: data.organizerTime,
+            clientTime: data.clientTime || null,
+            platform,
+            participants:
+              participants.length > 0 ? participants : ["organizer@company.com"],
+          };
+          onCreate(newMeeting);
+        }
+      } catch (err) {
+        console.error("Error generating meeting:", err);
+        setStep("form");
+      }
     }
   };
 
@@ -120,7 +178,7 @@ export default function AddMeetingModal({ onClose, onCreate }) {
         >
           <div className="flex items-start justify-between">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              Schedule a meeting
+              {isManualMode ? "Schedule Meeting Manually" : "AI-Powered Meeting Scheduling"}
             </h2>
             <button
               onClick={onClose}
@@ -245,30 +303,70 @@ export default function AddMeetingModal({ onClose, onCreate }) {
                   </>
                 )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
-                    Month
-                  </label>
-                  <input
-                    type="month"
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
-                    Week (1–4)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="4"
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
-                    value={week}
-                    onChange={(e) => setWeek(e.target.value)}
-                  />
-                </div>
+                {isManualMode ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                        Meeting Date
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                        Meeting Time
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                          value={convert12To24Hour(manualTime)}
+                          onChange={(e) => {
+                            const time24 = e.target.value;
+                            const time12 = convert24To12Hour(time24);
+                            setManualTime(time12);
+                          }}
+                          required
+                        />
+                        <div className="text-xs text-slate-500 dark:text-slate-400 px-2">
+                          {manualTime}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                        Month
+                      </label>
+                      <input
+                        type="month"
+                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                        value={month}
+                        onChange={(e) => setMonth(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                        Week (1–4)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="4"
+                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                        value={week}
+                        onChange={(e) => setWeek(e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
                 {/* Time input intentionally omitted. The system will find the best slot. */}
 
                 <div className="sm:col-span-2 flex items-center gap-4 text-sm text-slate-700 dark:text-slate-200">
@@ -331,8 +429,9 @@ export default function AddMeetingModal({ onClose, onCreate }) {
                   <button
                     className="px-4 py-2 text-sm rounded-lg bg-gradient-to-r from-indigo-600 to-pink-500 text-white shadow"
                     onClick={handleGenerate}
+                    disabled={isManualMode && (!manualDate || !manualTime)}
                   >
-                    Generate meeting
+                    {isManualMode ? "Create Meeting" : "Generate meeting"}
                   </button>
                 </div>
               </motion.div>
@@ -352,7 +451,7 @@ export default function AddMeetingModal({ onClose, onCreate }) {
                   transition={{ repeat: Infinity, ease: "linear", duration: 1 }}
                 />
                 <div className="text-sm text-slate-700 dark:text-slate-200">
-                  Finding best schedule…
+                  {isManualMode ? "Creating meeting..." : "Finding best schedule…"}
                 </div>
               </motion.div>
             )}
@@ -367,16 +466,16 @@ export default function AddMeetingModal({ onClose, onCreate }) {
   >
     <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-800">
       <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-        Best possible meeting time (calculated with Convene AI expertise)
+        {isManualMode ? "Meeting scheduled successfully" : "Best possible meeting time (calculated with Convene AI expertise)"}
       </div>
       <div className="mt-1 flex flex-col gap-2">
-        <code className="text-indigo-700 dark:text-indigo-300 break-all">
-          Organizer: {result.organizerTime}
-        </code>
+        <div className="text-indigo-700 dark:text-indigo-300">
+          <span className="font-medium">Organizer:</span> {formatDateTime(result.organizerTime)}
+        </div>
         {result.clientTime && (
-          <code className="text-pink-700 dark:text-pink-300 break-all">
-            Client: {result.clientTime}
-          </code>
+          <div className="text-pink-700 dark:text-pink-300">
+            <span className="font-medium">Client:</span> {formatDateTime(result.clientTime)}
+          </div>
         )}
         <p className="text-xs text-slate-600 dark:text-slate-400">
           {result.reasoning}

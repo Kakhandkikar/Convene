@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { meetings as seedMeetings } from "../dummydata";
+import { formatDateTime } from "../utils/timeUtils";
 
 const TEMPLATES = {
   "Start / Stop / Continue": ["Start", "Stop", "Continue"],
@@ -212,11 +213,11 @@ export default function MeetingDetails() {
           <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
             <span>ID: {meeting.meetingId}</span>
             <span>•</span>
-            <span>Organizer: {meeting.time}</span>
+            <span>Organizer: {formatDateTime(meeting.time)}</span>
             {meeting.clientTime && (
               <>
                 <span>•</span>
-                <span>Client: {meeting.clientTime}</span>
+                <span>Client: {formatDateTime(meeting.clientTime)}</span>
               </>
             )}
             <span>•</span>
@@ -276,13 +277,36 @@ export default function MeetingDetails() {
                 </h3>
                 <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
                   <div>Platform: {meeting.platform}</div>
-                  <div>Organizer Time: {meeting.time}</div>
+                  <div>Organizer Time: {formatDateTime(meeting.time)}</div>
                   {meeting.clientTime && (
-                    <div>Client Time: {meeting.clientTime}</div>
+                    <div>Client Time: {formatDateTime(meeting.clientTime)}</div>
                   )}
                   <div>Meeting ID: {meeting.meetingId}</div>
                 </div>
               </div>
+            </div>
+            
+            {/* Generate Meeting Link Button */}
+            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                className="px-3 py-2 text-xs rounded-md bg-indigo-600 text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-300/40 dark:focus:ring-indigo-700/40 transition-all"
+                onClick={() => {
+                  const links = {
+                    "Google Meet": "https://meet.google.com/",
+                    "Zoom": "https://zoom.us/meeting/schedule",
+                    "Microsoft Teams": "https://teams.microsoft.com/calendar",
+                    "Other": "#",
+                  };
+
+                  window.open(
+                    links[meeting.platform] || links["Other"],
+                    "_blank",
+                    "width=800,height=600,top=100,left=100,resizable=yes,scrollbars=yes"
+                  );
+                }}
+              >
+                Generate {meeting.platform} Link
+              </button>
             </div>
           </section>
         )}

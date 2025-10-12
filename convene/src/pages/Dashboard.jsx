@@ -4,13 +4,17 @@ import useDarkMode from "../hooks/useDarkMode";
 import { meetings as seedMeetings } from "../dummydata";
 import FAB from "../components/FAB";
 import AddMeetingModal from "../components/AddMeetingModal";
+import MeetingTypeModal from "../components/MeetingTypeModal";
 import JoinMeetingModal from "../components/JoinMeetingModal";
+import { formatDateTime } from "../utils/timeUtils";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [showModal, setShowModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showMeetingModal, setShowMeetingModal] = useState(false);
+  const [meetingType, setMeetingType] = useState("automated");
   const [showJoinModal, setShowJoinModal] = useState(false);
   const { theme, toggle } = useDarkMode();
   const [meetings, setMeetings] = useState(() => {
@@ -61,6 +65,13 @@ export default function Dashboard() {
 
     fetchUserMeetings();
   }, []);
+
+  // Handle meeting type selection
+  const handleMeetingTypeSelect = (type) => {
+    setMeetingType(type);
+    setShowTypeModal(false);
+    setShowMeetingModal(true);
+  };
 
   // ✅ Fix: Save meeting from Gemini with organizerTime/clientTime
   const handleMeetingCreated = (meeting) => {
@@ -188,11 +199,11 @@ export default function Dashboard() {
                       {meeting.title}
                     </h3>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
-                      Organizer: {meeting.time || meeting.organizerTime}
+                      Organizer: {formatDateTime(meeting.time || meeting.organizerTime)}
                     </p>
                     {meeting.clientTime && (
                       <p className="text-sm text-slate-600 dark:text-slate-300">
-                        Client: {meeting.clientTime}
+                        Client: {formatDateTime(meeting.clientTime)}
                       </p>
                     )}
                     {meeting.meetingId && (
@@ -220,13 +231,22 @@ export default function Dashboard() {
       </div>
 
       {/* Floating Action Button */}
-      <FAB onClick={() => setShowModal(true)} />
+      <FAB onClick={() => setShowTypeModal(true)} />
+
+      {/* Meeting Type Selection Modal */}
+      {showTypeModal && (
+        <MeetingTypeModal
+          onClose={() => setShowTypeModal(false)}
+          onSelectType={handleMeetingTypeSelect}
+        />
+      )}
 
       {/* Add Meeting Modal */}
-      {showModal && (
+      {showMeetingModal && (
         <AddMeetingModal
-          onClose={() => setShowModal(false)}
+          onClose={() => setShowMeetingModal(false)}
           onCreate={handleMeetingCreated}
+          meetingType={meetingType}
         />
       )}
 
